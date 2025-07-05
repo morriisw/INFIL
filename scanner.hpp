@@ -30,7 +30,7 @@ class Scanner {
             target_ip_ = target;
         }
 
-        // Public methods to perform TCP and UDP port scans
+        // Public methods to perform TCP, UDP, and SYN scans
         void scanTCPPorts(int start_port, int end_port, bool verbose);
         void scanUDPPorts(int start_port, int end_port, bool verbose);
         void scanSYNPorts(int start_port, int end_port, bool verbose);
@@ -51,16 +51,6 @@ class Scanner {
         string identifyService(const string& banner, int port);
         string identifyUDPService(int port, const vector<uint8_t>& response);
 };
-
-// class TCPScanner : public Scanner {
-//     public:
-//         TCPScanner(const string& target) {
-//             target_ip_ = target;
-//         } 
-    
-//     private:
-//         string target_ip_;
-// };
 
 #endif
 

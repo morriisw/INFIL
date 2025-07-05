@@ -1,4 +1,3 @@
-// scanner.cpp
 #include <iostream>
 #include <string>
 #include <cstring>
@@ -14,7 +13,6 @@
 #include <vector>
 #include <tins/tins.h>
 #include <tins/sniffer.h>
-#include <random>
 #include <iomanip>
 #include <sstream>
 #include <tuple>
@@ -442,14 +440,6 @@ void Scanner::scanUDPPorts(int start, int end, bool verbose) {
              << setw(service_col_width + 2) << service
              << "\n";
     }
-}
-
-
-uint16_t RandShort() {
-    static std::random_device rd;
-    static std::mt19937 gen(rd());
-    static std::uniform_int_distribution<uint16_t> dis(1024, 65535);
-    return dis(gen);
 }
 
 void Scanner::scanSYNPorts(int start_port, int end_port, bool verbose) {
