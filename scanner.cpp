@@ -259,7 +259,7 @@ string Scanner::grabBanner(int port) {
 }
 
 void Scanner::scanTCPPorts(int start, int end, bool verbose) {
-    std::cout << "[*] Starting TCP Scan on " << target_ip_ << std::endl;
+    std::cout << "\n[*] Starting TCP Scan on " << target_ip_ << "\n";
 
     vector<thread> threads;
     const int MAX_THREADS = 500;
@@ -268,7 +268,7 @@ void Scanner::scanTCPPorts(int start, int end, bool verbose) {
 
     for (int port = start; port <= end; ++port) {
         threads.emplace_back([this, port, &results, &result_mutex]() {
-            int status = isTCPPortOpen(port);  // Updated to return int status
+            int status = isTCPPortOpen(port);
             string result;
 
             if (status == TCP_OPEN) {
@@ -320,6 +320,8 @@ void Scanner::scanTCPPorts(int start, int end, bool verbose) {
         service_col_width = max(service_col_width, service.length());
     }
 
+    cout << "\n";
+
     // Print header
     cout << left
          << setw(port_col_width + 2) << "PORT"
@@ -338,6 +340,8 @@ void Scanner::scanTCPPorts(int start, int end, bool verbose) {
              << setw(service_col_width + 2) << service
              << "\n";
     }
+
+    cout << "\n";
 }
 
 string Scanner::identifyUDPService(int port, const vector<uint8_t>& response) {
@@ -363,7 +367,7 @@ string Scanner::identifyUDPService(int port, const vector<uint8_t>& response) {
 }
 
 void Scanner::scanUDPPorts(int start, int end, bool verbose) {
-    std::cout << "[*] Starting UDP Scan on " << target_ip_ << std::endl;
+    std::cout << "\n[*] Starting UDP Scan on " << target_ip_ << "\n";
 
     vector<thread> threads;
     const int MAX_THREADS = 500;
@@ -422,6 +426,8 @@ void Scanner::scanUDPPorts(int start, int end, bool verbose) {
         service_col_width = max(service_col_width, service.length());
     }
 
+    cout << "\n";
+
     // Print header
     cout << left
          << setw(port_col_width + 2) << "PORT"
@@ -440,10 +446,12 @@ void Scanner::scanUDPPorts(int start, int end, bool verbose) {
              << setw(service_col_width + 2) << service
              << "\n";
     }
+
+    cout << "\n";
 }
 
 void Scanner::scanSYNPorts(int start_port, int end_port, bool verbose) {
-    std::cout << "[*] Starting SYN Scan on " << target_ip_ << std::endl;
+    std::cout << "\n[*] Starting SYN Scan on " << target_ip_ << "\n";
 
     Tins::NetworkInterface iface = Tins::NetworkInterface::default_interface();
     Tins::IPv4Address src_ip = iface.addresses().ip_addr;
@@ -553,6 +561,8 @@ void Scanner::scanSYNPorts(int start_port, int end_port, bool verbose) {
         service_col_width = std::max(service_col_width, service.length());
     }
 
+    cout << "\n";
+
     // Print header
     std::cout << std::left
             << std::setw(port_col_width + 2) << "PORT"
@@ -571,4 +581,6 @@ void Scanner::scanSYNPorts(int start_port, int end_port, bool verbose) {
                 << std::setw(service_col_width + 2) << service
                 << "\n";
     }
+
+    cout << "\n";
 }

@@ -107,8 +107,13 @@ int main(int argc, char* argv[]) {
                 // Single port or no port number
                 if (ports.at(0) != "") {
                     // Specific port number
-                    portStart = stoi(ports.at(0));
-                    portEnd = stoi(ports.at(0));
+                    try {
+                        portStart = stoi(ports.at(0));
+                        portEnd = stoi(ports.at(0));
+                    } catch (...) {
+                        std::cout << "\nInvalid port number.\n\n";
+                        return 1;
+                    }
                 } else {
                     // Equivalent nmap -p- functionality
                     portStart = 1;
@@ -116,9 +121,24 @@ int main(int argc, char* argv[]) {
                 }
             } else if (ports.size() == 2) {
                 // Port range
-                portStart = stoi(ports.at(0));
-                portEnd = stoi(ports.at(1));
+                try {
+                    portStart = stoi(ports.at(0));
+                    portEnd = stoi(ports.at(1));
+                } catch (...) {
+                    std::cout << "\nInvalid port number.\n\n";
+                    return 1;
+                }
             }
+        }
+
+        if (portStart < 1 || portStart > 65535 || portEnd < 1 || portEnd > 65535) {
+            std::cout << "\nPlease choose a port number between 1 and 65535 inclusive.\n\n";
+            return 1;
+        }
+
+        if (portStart > portEnd) {
+            std::cout << "\nStarting port number should be less than end port number.\n\n";
+            return 1;
         }
 
         // Scan type
