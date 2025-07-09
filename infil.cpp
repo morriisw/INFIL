@@ -1,5 +1,6 @@
 #include "scanner.hpp"
 #include "payload.hpp"
+#include "listener.hpp"
 #include <iostream>
 #include <string>
 #include <vector>
@@ -37,7 +38,10 @@ string correctUsageString(string tool) {
                "-P  Hex Payload\n\n"
                "NOTE: lhost is not required for bind shell\n\n";
     } else if (tool == "listener") {
-        return "Usage: ./infil listener <lport> <protocol>";
+        return "\nUsage: ./infil listener <lport> <protocol>\n\n"
+               "Protocol Options:\n"
+               "-T  TCP Connection\n"
+               "-U  UDP Connection\n\n";
     } else {
         return invalidToolString();
     }
@@ -235,5 +239,31 @@ int main(int argc, char* argv[]) {
                 std::cout << "\n\n";
             }
         }
+    } else if (tool == "listener") {
+        string portInput = argv[2];
+        string protocol = argv[3];
+        int portInt;
+
+        if (protocol != "-T" && protocol != "-U") {
+            std::cout << correctUsageString(tool);
+            return 1;
+        }
+
+        // Try converting port number to integer
+        try {
+            portInt = std::stoi(portInput);
+        } catch (...) {
+            std::cout << "\nInvalid port number.\n\n";
+            return 1;
+        }
+
+        // Ensure port number is between 1 and 65535 
+        if (portInt < 1 || portInt > 65535) {
+            std::cout << "\nPlease choose a port number between 1 and 65535 inclusive.\n\n";
+            return 1;
+        }
+
+        Listener listener(portInt, protocol);
+        listener.start();
     }
 }
