@@ -85,7 +85,13 @@ This will produce an executable file *infil*.
   - **-T** (TCP Connect Scan)
   - **-S** (Stealth/SYN Scan)
   - **-U** (UDP Scan)
+
+**Important:** Running SYN (-S) and UDP (-U) scans requires elevated privileges. Use `sudo` to execute these scan types.
+
 - The following global option can be included but is not required:
   - **-v** (Verbose Mode)
+
+You may also wish to test the scanner's functionality on [Nmap's official test machine](http://scanme.nmap.org/). The public IP address for this machine is **45.33.32.156**.
+
 
 
