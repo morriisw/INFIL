@@ -90,7 +90,7 @@ UDPScanResult Scanner::isUDPPortOpen(int port) {
     UDPPortStatus status = UDP_OPEN_FILTERED;
 
     if (getaddrinfo(target_ip_.c_str(), port_str.c_str(), &hints, &res) != 0)
-        return { UDP_OPEN_FILTERED, response }; // Filtered if nonzero error code
+        return { UDP_OPEN_FILTERED, response };  // Filtered if nonzero error code
 
     // Some hostnames or IPs can be resolved to more than one addrinfo structure
     // i.e. both IPv4 and IPv6 addresses
@@ -108,37 +108,90 @@ UDPScanResult Scanner::isUDPPortOpen(int port) {
         if (port == 53) {
             // DNS standard query (google.com A record)
             payload = {
-                0x12, 0x34,             // Transaction ID
-                0x01, 0x00,             // Standard query
-                0x00, 0x01,             // Questions: 1
-                0x00, 0x00,             // Answer RRs
-                0x00, 0x00,             // Authority RRs
-                0x00, 0x00,             // Additional RRs
-                0x06, 'g','o','o','g','l','e',
-                0x03, 'c','o','m',
-                0x00,                   // End of host
-                0x00, 0x01,             // Type A
-                0x00, 0x01              // Class IN
+                0x12, 0x34,                     // Transaction ID
+                0x01, 0x00,                     // Standard query
+                0x00, 0x01,                     // Questions: 1
+                0x00, 0x00,                     // Answer RRs
+                0x00, 0x00,                     // Authority RRs
+                0x00, 0x00,                     // Additional RRs
+                0x06, 'g','o','o','g','l','e',  // QNAME: google
+                0x03, 'c','o','m',              // QNAME: com
+                0x00,                           // End of QNAME
+                0x00, 0x01,                     // Type A
+                0x00, 0x01                      // Class IN
+            };
+        } else if (port == 69) {
+            // TFTP read request for "test"
+            payload = {
+                0x00, 0x01,                // Opcode: 1 = Read Request (RRQ)
+                't','e','s','t', 0x00,     // Filename: "test"
+                'o','c','t','e','t', 0x00  // Mode: "octet" (raw binary)
             };
         } else if (port == 123) {
-            // Basic NTP client request (mode 3)
+            // Basic NTP client request
             payload.resize(48, 0);
-            payload[0] = 0x1B; // LI=0, VN=3, Mode=3 (client)
+            payload[0] = 0x1B;  // LI (Leap Indicator) = 0, VN (Version Number) = 3, Mode = 3 (Client Mode)
+        } else if (port == 137) {
+            // NetBIOS name service query
+            payload = {
+                0x81, 0x00, 0x00, 0x10,           // Transaction ID + Flags
+                0x00, 0x01, 0x00, 0x00,           // Questions = 1
+                0x00, 0x00, 0x00, 0x00,           // No answers/authority/additional
+                0x20,                             // Name length (32 bytes)
+                'C','K','A','A','A','A','A','A',
+                'A','A','A','A','A','A','A','A',
+                'A','A','A','A','A','A','A','A',
+                'A','A','A','A','A','A','A','A',  // Encoded NetBIOS name
+                0x00, 0x00, 0x21, 0x00, 0x01      // 1 byte suffix (Workstation Service), Type NB (NetBIOS name), Class IN (Internet)
+            };
         } else if (port == 161) {
             // SNMP GET request for sysDescr.0
             payload = {
-                0x30, 0x26,                   // Sequence
-                0x02, 0x01, 0x00,             // SNMP version 1
-                0x04, 0x06, 'p','u','b','l','i','c', // community string
-                0xA0, 0x19,                   // GETRequest PDU
-                0x02, 0x04, 0x70, 0x01, 0x00, 0x01, // request-id
-                0x02, 0x01, 0x00,             // error-status
-                0x02, 0x01, 0x00,             // error-index
-                0x30, 0x0B,                   // variable bindings list
-                0x30, 0x09,
-                0x06, 0x05, 0x2b, 0x06, 0x01, 0x02, 0x01, // sysDescr OID
-                0x05, 0x00                    // NULL value
+                0x30, 0x26,                                // Sequence
+                0x02, 0x01, 0x00,                          // SNMP version 1
+                0x04, 0x06, 'p','u','b','l','i','c',       // Community string: public
+                0xA0, 0x19,                                // GETRequest PDU
+                0x02, 0x04, 0x70, 0x01, 0x00, 0x01,        // Request-id
+                0x02, 0x01, 0x00,                          // Error status
+                0x02, 0x01, 0x00,                          // Error index
+                0x30, 0x0B,                                // Variable bindings list
+                0x30, 0x09,                                // VarBind
+                0x06, 0x05, 0x2b, 0x06, 0x01, 0x02, 0x01,  // sysDescr.0 OID
+                0x05, 0x00                                 // NULL value
             };
+        } else if (port == 500) {
+            // ISAKMP (IKE Phase 1) header
+            payload = {
+                0x00, 0x00, 0x00, 0x00,  // Initiator cookie
+                0x00, 0x00, 0x00, 0x00,  // Responder cookie
+                0x01,                    // Next payload: SA (Security Association)
+                0x10,                    // Version
+                0x02,                    // Exchange type: Identity Protection (IKEv1)
+                0x00,                    // Flags
+                0x00, 0x00, 0x00, 0x00,  // Message ID
+                0x00, 0x00, 0x00, 0x1C   // Length
+            };
+        } else if (port == 514) {
+            // Syslog test message
+            const char* msg = "<13>Test syslog message\n";  // <13> = facility: user-level (1), severity: notice (5)
+            payload = std::vector<uint8_t>(msg, msg + strlen(msg));
+        } else if (port == 520) {
+            // RIP request
+            payload = {
+                0x01,       // Command: Request
+                0x02,       // Version: 2
+                0x00, 0x00  // Unused
+            };
+        } else if (port == 1900) {
+            // SSDP M-SEARCH discovery request
+            const char* msg =
+                "M-SEARCH * HTTP/1.1\r\n"
+                "HOST: 239.255.255.250:1900\r\n"  // UDP multicast (only works when target is on local network)
+                "MAN: \"ssdp:discover\"\r\n"
+                "MX: 1\r\n"                       // Max wait time before responding   
+                "ST: ssdp:all\r\n"                // Query for all services
+                "\r\n";
+            payload = std::vector<uint8_t>(msg, msg + strlen(msg));
         } else {
             // Default UDP payload "Hello"
             const char* msg = "Hello";
@@ -205,7 +258,7 @@ string Scanner::identifyService(const string& banner, int port) {
     if (banner.find("MySQL") != string::npos) return "mysql";
     if (banner.find("MongoDB") != string::npos) return "mongodb";
     
-    // Detect TLS/SSL handshake (first byte 0x16 and version <= TLS 1.3)
+    // TLS handshake detection
     if (banner.size() >= 3) {
         uint8_t byte0 = static_cast<uint8_t>(banner[0]);
         uint8_t byte1 = static_cast<uint8_t>(banner[1]);
@@ -216,19 +269,28 @@ string Scanner::identifyService(const string& banner, int port) {
         }
     }
 
-    // Fallback to port-based service guess
+    // Port-based fallback
     switch (port) {
-        case 21: return "ftp";
-        case 22: return "ssh";
-        case 23: return "telnet";
-        case 25: return "smtp";
-        case 53: return "domain";
-        case 80: return "http";
-        case 110: return "pop3";
-        case 143: return "imap";
-        case 443: return "https";
-        case 3306: return "mysql";
-        case 6379: return "redis";
+        case 20: return "ftp-data";      // FTP (File Transfer Protocol) data transfer
+        case 21: return "ftp";           // FTP (File Transfer Protocol) command/control
+        case 22: return "ssh";           // SSH (Secure Shell)
+        case 23: return "telnet";        // Telnet
+        case 25: return "smtp";          // SMTP (Simple Mail Transfer Protocol)
+        case 53: return "domain";        // DNS (Domain Name System)
+        case 80: return "http";          // HTTP (Hypertext Transfer Protocol)
+        case 110: return "pop3";         // POP3 (Post Office Protocol version 3)
+        case 123: return "ntp";          // NTP (Network Time Protocol)
+        case 143: return "imap";         // IMAP (Internet Message Access Protocol)
+        case 161: return "snmp";         // SNMP (Simple Network Management Protocol)
+        case 443: return "https";        // HTTPS (TLS over TCP)
+        case 445: return "smb";          // Windows SMB (Server Message Block)
+        case 3306: return "mysql";       // MySQL
+        case 3389: return "rdp";         // RDP (Remote Desktop Protocol)
+        case 5060: return "sip";         // SIP (Session Initiation Protocol)
+        case 5432: return "postgresql";  // PostgreSQL
+        case 5900: return "vnc";         // VNC (Virtual Network Computing)
+        case 6379: return "redis";       // Redis key-value store
+        case 8080: return "http-alt";    // Alternate HTTP
         default: break;
     }
 
@@ -378,31 +440,62 @@ void Scanner::scanTCPPorts(int start, int end, bool verbose) {
 /// @return The service currently being hosted on the specified port as a string
 string Scanner::identifyUDPService(int port, const vector<uint8_t>& response) {
 
-    // DNS response flags
+    // DNS (Domain Name System)
     if (port == 53 && response.size() >= 4 && response[2] == 0x81 && response[3] == 0x80)
         return "domain";
 
-    // NTP response mode
+    // DHCP (Dynamic Host Configuration Protocol)
+    if (port == 67 || port == 68)
+        return "dhcp";
+
+    // TFTP (Trivial File Transfer Protocol)
+    if (port == 69 && !response.empty())
+        return "tftp";
+
+    // NTP (Network Time Protocol)
     if (port == 123 && response.size() >= 48 && (response[0] & 0x07) >= 4)
         return "ntp";
 
-    // SNMP agent response
+    // NetBIOS Name Service
+    if (port == 137 && response.size() > 2 && (response[2] & 0x80)) {
+        return "netbios";
+    }
+
+    // NetBIOS Datagram Service
+    if (port == 138 && !response.empty())
+        return "netbios-dgm";
+
+    // SNMP (Simple Network Management Protocol)
     if (port == 161 && response.size() > 10) {
         string resp_str(response.begin(), response.end());
         if (response[0] == 0x30 && resp_str.find("public") != string::npos)
             return "snmp";
     }
 
-    // SSDP/UPnP response
+    // Syslog
+    if (port == 514 && !response.empty())
+        return "syslog";
+
+    // RIP (Routing Information Protocol)
+    if (port == 520 && !response.empty())
+        return "rip";
+
+    // IPP (Internet Printing Protocol)
+    if (port == 631 && !response.empty())
+        return "ipp";
+
+    // SSDP (Simple Service Discovery Protocol) / UPnP (Universal Plug and Play)
     if (port == 1900) {
         string s(response.begin(), response.end());
         if (s.find("HTTP/1.1 200 OK") != string::npos && s.find("ST:") != string::npos)
             return "ssdp/upnp";
     }
 
-    // NetBIOS response
-    if (port == 137 && response.size() > 2 && (response[2] & 0x80)) {
-        return "netbios";
+    // SIP (Session Initiation Protocol)
+    if (port == 5060 && !response.empty()) {
+        string s(response.begin(), response.end());
+        if (s.find("SIP") != string::npos)
+            return "sip";
     }
 
     return "Unknown";
