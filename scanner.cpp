@@ -18,18 +18,17 @@
 #include <tuple>
 #include "scanner.hpp"
 
-mutex io_mutex;
-
-// TCP Connect Scan (Full Handshake)
-// Check if TCP port is open using non-blocking connect + select()
+/// @brief Checks if a port is open using TCP Connect Scan
+/// @param port is the port number to scan
+/// @return A TCP port status (open/closed/filtered)
 TCPPortStatus Scanner::isTCPPortOpen(int port) {
     addrinfo hints{}, *res;
-    hints.ai_family = AF_UNSPEC; // Support IPv4 and IPv6
-    hints.ai_socktype = SOCK_STREAM;
+    hints.ai_family = AF_UNSPEC;      // Support IPv4 and IPv6
+    hints.ai_socktype = SOCK_STREAM;  // TCP socket
 
     string port_str = to_string(port);
     if (getaddrinfo(target_ip_.c_str(), port_str.c_str(), &hints, &res) != 0)
-        return TCP_FILTERED;
+        return TCP_FILTERED;  // Filtered if nonzero error code
 
     TCPPortStatus status = TCP_FILTERED;
 
@@ -37,31 +36,37 @@ TCPPortStatus Scanner::isTCPPortOpen(int port) {
         int sockfd = socket(p->ai_family, p->ai_socktype, p->ai_protocol);
         if (sockfd < 0) continue;
 
-        // Set socket to non-blocking
+        // Set socket to non-blocking mode to prevent blocking of connect()
         fcntl(sockfd, F_SETFL, O_NONBLOCK);
-        connect(sockfd, p->ai_addr, p->ai_addrlen); // Non-blocking connect
+
+        // Initiate non-blocking connect and return immediately
+        connect(sockfd, p->ai_addr, p->ai_addrlen);
 
         fd_set fdset;
         FD_ZERO(&fdset);
         FD_SET(sockfd, &fdset);
 
         timeval tv{};
-        tv.tv_sec = 1;  // 1 second timeout
+        tv.tv_sec = 1;  // Wait 1 second for connection
         tv.tv_usec = 0;
 
+        // Wait for socket to be writable or timeout
         if (select(sockfd + 1, nullptr, &fdset, nullptr, &tv) > 0) {
-            int so_error;
+            int so_error = 0;
             socklen_t len = sizeof(so_error);
             getsockopt(sockfd, SOL_SOCKET, SO_ERROR, &so_error, &len);
 
             if (so_error == 0) {
-                status = TCP_OPEN; // OPEN
+                // Connection succeeded (port open)
+                status = TCP_OPEN;
                 close(sockfd);
                 break;
             } else if (so_error == ECONNREFUSED) {
-                status = TCP_CLOSED; // CLOSED
+                // Connection refused (port closed)
+                status = TCP_CLOSED;
             } else {
-                status = TCP_FILTERED; // FILTERED or unreachable
+                // Port filtered
+                status = TCP_FILTERED;
             }
         }
         close(sockfd);
@@ -71,7 +76,10 @@ TCPPortStatus Scanner::isTCPPortOpen(int port) {
     return status;
 }
 
-// UDP Scan
+/// @brief Checks if a port is open using UDP Scan
+/// @param port is the port number to scan
+/// @return A UDP port status (open/closed/open|filtered) and a raw payload returned from 
+///         scan stored within a struct
 UDPScanResult Scanner::isUDPPortOpen(int port) {
     addrinfo hints{}, *res;
     hints.ai_family = AF_UNSPEC;
@@ -82,8 +90,10 @@ UDPScanResult Scanner::isUDPPortOpen(int port) {
     UDPPortStatus status = UDP_OPEN_FILTERED;
 
     if (getaddrinfo(target_ip_.c_str(), port_str.c_str(), &hints, &res) != 0)
-        return { UDP_OPEN_FILTERED, response };
+        return { UDP_OPEN_FILTERED, response }; // Filtered if nonzero error code
 
+    // Some hostnames or IPs can be resolved to more than one addrinfo structure
+    // i.e. both IPv4 and IPv6 addresses
     for (addrinfo* p = res; p != nullptr; p = p->ai_next) {
         int sockfd = socket(p->ai_family, p->ai_socktype, p->ai_protocol);
         if (sockfd < 0) continue;
@@ -92,7 +102,7 @@ UDPScanResult Scanner::isUDPPortOpen(int port) {
         tv.tv_sec = 1;
         tv.tv_usec = 0;
 
-        // Craft protocol-specific payload
+        // Craft protocol-specific payload for common UDP services
         std::vector<uint8_t> payload;
 
         if (port == 53) {
@@ -111,30 +121,31 @@ UDPScanResult Scanner::isUDPPortOpen(int port) {
                 0x00, 0x01              // Class IN
             };
         } else if (port == 123) {
-            // Basic NTP request (mode 3: client)
+            // Basic NTP client request (mode 3)
             payload.resize(48, 0);
-            payload[0] = 0x1B; // LI=0, VN=3, Mode=3
+            payload[0] = 0x1B; // LI=0, VN=3, Mode=3 (client)
         } else if (port == 161) {
             // SNMP GET request for sysDescr.0
             payload = {
                 0x30, 0x26,                   // Sequence
                 0x02, 0x01, 0x00,             // SNMP version 1
-                0x04, 0x06, 'p','u','b','l','i','c', // community
-                0xA0, 0x19,                   // GET request
+                0x04, 0x06, 'p','u','b','l','i','c', // community string
+                0xA0, 0x19,                   // GETRequest PDU
                 0x02, 0x04, 0x70, 0x01, 0x00, 0x01, // request-id
                 0x02, 0x01, 0x00,             // error-status
                 0x02, 0x01, 0x00,             // error-index
-                0x30, 0x0B,                   // varbind list
+                0x30, 0x0B,                   // variable bindings list
                 0x30, 0x09,
-                0x06, 0x05, 0x2b, 0x06, 0x01, 0x02, 0x01, // sysDescr
+                0x06, 0x05, 0x2b, 0x06, 0x01, 0x02, 0x01, // sysDescr OID
                 0x05, 0x00                    // NULL value
             };
         } else {
+            // Default UDP payload "Hello"
             const char* msg = "Hello";
             payload = std::vector<uint8_t>(msg, msg + strlen(msg));
         }
 
-        // Try sending and receiving up to 2 times (default nmap behaviour)
+        // Try sending and receiving up to 2 times (default Nmap behaviour)
         for (int attempt = 0; attempt < 2 && status == UDP_OPEN_FILTERED; ++attempt) {
             sendto(sockfd, payload.data(), payload.size(), 0, p->ai_addr, p->ai_addrlen);
 
@@ -150,10 +161,12 @@ UDPScanResult Scanner::isUDPPortOpen(int port) {
                 int n = recvfrom(sockfd, buffer, sizeof(buffer), 0, (sockaddr*)&from, &fromlen);
 
                 if (n >= 0) {
+                    // Response received (port open)
                     response.assign(buffer, buffer + n);
                     status = UDP_OPEN;
                     break;
                 } else {
+                    // Check for ICMP unreachable errors
                     if (errno == ECONNREFUSED) {
                         status = UDP_CLOSED;
                         break;
@@ -165,6 +178,9 @@ UDPScanResult Scanner::isUDPPortOpen(int port) {
         }
 
         close(sockfd);
+
+        // Break if status changes from open|filtered to open or closed
+        // so other addresses do not need to be tested
         if (status != UDP_OPEN_FILTERED)
             break;
     }
@@ -173,6 +189,10 @@ UDPScanResult Scanner::isUDPPortOpen(int port) {
     return { status, response };
 }
 
+/// @brief Identifies the hosted service given a banner string and port number
+/// @param banner is the banner returned from the TCP scan
+/// @param port is the port number from which to grab the service banner
+/// @return The service currently being hosted on the specified port as a string
 string Scanner::identifyService(const string& banner, int port) {
     if (banner.find("SSH-") == 0) return "ssh";
     if (banner.find("HTTP/") == 0 || banner.find("Server:") != string::npos) return "http";
@@ -185,7 +205,7 @@ string Scanner::identifyService(const string& banner, int port) {
     if (banner.find("MySQL") != string::npos) return "mysql";
     if (banner.find("MongoDB") != string::npos) return "mongodb";
     
-    // --- TLS/SSL detection ---
+    // Detect TLS/SSL handshake (first byte 0x16 and version <= TLS 1.3)
     if (banner.size() >= 3) {
         uint8_t byte0 = static_cast<uint8_t>(banner[0]);
         uint8_t byte1 = static_cast<uint8_t>(banner[1]);
@@ -196,7 +216,7 @@ string Scanner::identifyService(const string& banner, int port) {
         }
     }
 
-    // Port-based fallback if nothing matched
+    // Fallback to port-based service guess
     switch (port) {
         case 21: return "ftp";
         case 22: return "ssh";
@@ -215,11 +235,13 @@ string Scanner::identifyService(const string& banner, int port) {
     return "Unknown";
 }
 
-// Attempt to grab a banner from an open TCP service
+/// @brief Attempts to grab a banner from an open TCP service
+/// @param port is the port number from which to grab the service banner
+/// @return The service currently being hosted on the specified port as a string
 string Scanner::grabBanner(int port) {
     addrinfo hints{}, *res;
-    hints.ai_family = AF_UNSPEC;             // IPv4 or IPv6
-    hints.ai_socktype = SOCK_STREAM;         // TCP
+    hints.ai_family = AF_UNSPEC;      // IPv4 or IPv6
+    hints.ai_socktype = SOCK_STREAM;  // TCP
 
     string port_str = to_string(port);
     if (getaddrinfo(target_ip_.c_str(), port_str.c_str(), &hints, &res) != 0)
@@ -231,6 +253,7 @@ string Scanner::grabBanner(int port) {
         int sockfd = socket(p->ai_family, p->ai_socktype, p->ai_protocol);
         if (sockfd < 0) continue;
 
+        // 2 second receive timeout to avoid hanging
         timeval tv;
         tv.tv_sec = 2;
         tv.tv_usec = 0;
@@ -241,7 +264,7 @@ string Scanner::grabBanner(int port) {
             continue;
         }
 
-        // Send newline or dummy data to provoke a response
+        // Send newline to provoke response from target
         const char* probe = "\n";
         send(sockfd, probe, strlen(probe), 0);
 
@@ -258,11 +281,15 @@ string Scanner::grabBanner(int port) {
     return identifyService(banner, port);
 }
 
+/// @brief TCP Connect Scan
+/// @param start is the first port number to scan in the port range
+/// @param end is the last port number to scan in the port range
+/// @param verbose is true or false depending on whether the user wants verbose output
 void Scanner::scanTCPPorts(int start, int end, bool verbose) {
     std::cout << "\n[*] Starting TCP Scan on " << target_ip_ << "\n";
 
     vector<thread> threads;
-    const int MAX_THREADS = 500;
+    const int MAX_THREADS = 500; // Maximum limit of 500 threads
     vector<pair<int, string>> results;
     mutex result_mutex;
 
@@ -289,16 +316,17 @@ void Scanner::scanTCPPorts(int start, int end, bool verbose) {
             results.emplace_back(port, result);
         });
 
+        // Limit max concurrent threads
         if (threads.size() >= MAX_THREADS) {
             for (auto& t : threads) t.join();
             threads.clear();
         }
     }
 
-    for (auto& t : threads) t.join();
-    sort(results.begin(), results.end());
+    for (auto& t : threads) t.join();      // Join remaining threads
+    sort(results.begin(), results.end());  // Sort results by port
 
-    // Parse and store structured rows, and determine column widths
+    // Parse results and determine max column widths for formatting
     vector<tuple<string, string, string>> parsed_rows;
     size_t port_col_width = 0;
     size_t state_col_width = 0;
@@ -311,7 +339,7 @@ void Scanner::scanTCPPorts(int start, int end, bool verbose) {
         iss >> port_proto >> state;
         getline(iss, service);
         if (!service.empty() && service[0] == ' ')
-            service = service.substr(1); // trim leading space
+            service = service.substr(1); // Trim leading space
 
         parsed_rows.emplace_back(port_proto, state, service);
 
@@ -322,16 +350,16 @@ void Scanner::scanTCPPorts(int start, int end, bool verbose) {
 
     cout << "\n";
 
-    // Print header
+    // Print header row
     cout << left
          << setw(port_col_width + 2) << "PORT"
          << setw(state_col_width + 2) << "STATE"
          << setw(service_col_width + 2) << "SERVICE"
          << "\n";
 
-    // Print data
+    // Print each row, optionally filtering closed ports if verbose == false
     for (const auto& [port_proto, state, service] : parsed_rows) {
-        if (verbose != true && state == "closed") {
+        if (!verbose && state == "closed") {
             continue;
         }
         cout << left
@@ -344,21 +372,35 @@ void Scanner::scanTCPPorts(int start, int end, bool verbose) {
     cout << "\n";
 }
 
+/// @brief Identifies UDP service from port number and response data
+/// @param port is the port number to scan
+/// @param response is the raw response payload from the UDP scan
+/// @return The service currently being hosted on the specified port as a string
 string Scanner::identifyUDPService(int port, const vector<uint8_t>& response) {
+
+    // DNS response flags
     if (port == 53 && response.size() >= 4 && response[2] == 0x81 && response[3] == 0x80)
         return "domain";
+
+    // NTP response mode
     if (port == 123 && response.size() >= 48 && (response[0] & 0x07) >= 4)
         return "ntp";
+
+    // SNMP agent response
     if (port == 161 && response.size() > 10) {
         string resp_str(response.begin(), response.end());
         if (response[0] == 0x30 && resp_str.find("public") != string::npos)
             return "snmp";
     }
+
+    // SSDP/UPnP response
     if (port == 1900) {
         string s(response.begin(), response.end());
         if (s.find("HTTP/1.1 200 OK") != string::npos && s.find("ST:") != string::npos)
             return "ssdp/upnp";
     }
+
+    // NetBIOS response
     if (port == 137 && response.size() > 2 && (response[2] & 0x80)) {
         return "netbios";
     }
@@ -366,11 +408,15 @@ string Scanner::identifyUDPService(int port, const vector<uint8_t>& response) {
     return "Unknown";
 }
 
+/// @brief UDP Scan
+/// @param start is the first port number to scan in the port range
+/// @param end is the last port number to scan in the port range
+/// @param verbose is true or false depending on whether the user wants verbose output
 void Scanner::scanUDPPorts(int start, int end, bool verbose) {
     std::cout << "\n[*] Starting UDP Scan on " << target_ip_ << "\n";
 
     vector<thread> threads;
-    const int MAX_THREADS = 500;
+    const int MAX_THREADS = 500;  // Maximum limit of 500 threads
     vector<pair<int, string>> results;
     mutex result_mutex;
 
@@ -395,16 +441,17 @@ void Scanner::scanUDPPorts(int start, int end, bool verbose) {
             results.emplace_back(port, result);
         });
 
+        // Limit max concurrent threads
         if (threads.size() >= MAX_THREADS) {
             for (auto& t : threads) t.join();
             threads.clear();
         }
     }
 
-    for (auto& t : threads) t.join();
-    sort(results.begin(), results.end());
+    for (auto& t : threads) t.join();      // Join remaining threads
+    sort(results.begin(), results.end());  // Sort results by port
 
-    // Parse and store structured rows, and determine column widths
+    // Parse results and determine max column widths for formatting
     vector<tuple<string, string, string>> parsed_rows;
     size_t port_col_width = 0;
     size_t state_col_width = 0;
@@ -417,7 +464,7 @@ void Scanner::scanUDPPorts(int start, int end, bool verbose) {
         iss >> port_proto >> state;
         getline(iss, service);
         if (!service.empty() && service[0] == ' ')
-            service = service.substr(1); // trim leading space
+            service = service.substr(1); // Trim leading space
 
         parsed_rows.emplace_back(port_proto, state, service);
 
@@ -428,16 +475,16 @@ void Scanner::scanUDPPorts(int start, int end, bool verbose) {
 
     cout << "\n";
 
-    // Print header
+    // Print header row
     cout << left
          << setw(port_col_width + 2) << "PORT"
          << setw(state_col_width + 2) << "STATE"
          << setw(service_col_width + 2) << "SERVICE"
          << "\n";
 
-    // Print data
+    // Print each row, optionally filtering closed ports if verbose == false
     for (const auto& [port_proto, state, service] : parsed_rows) {
-        if (verbose != true && (state == "closed" || service == "")) {
+        if (!verbose && (state == "closed" || service == "")) {
             continue;
         }
         cout << left
@@ -450,14 +497,18 @@ void Scanner::scanUDPPorts(int start, int end, bool verbose) {
     cout << "\n";
 }
 
-void Scanner::scanSYNPorts(int start_port, int end_port, bool verbose) {
+/// @brief SYN Scan
+/// @param start is the first port number to scan in the port range
+/// @param end is the last port number to scan in the port range
+/// @param verbose is true or false depending on whether the user wants verbose output
+void Scanner::scanSYNPorts(int start, int end, bool verbose) {
     std::cout << "\n[*] Starting SYN Scan on " << target_ip_ << "\n";
 
     Tins::NetworkInterface iface = Tins::NetworkInterface::default_interface();
     Tins::IPv4Address src_ip = iface.addresses().ip_addr;
 
     Tins::PacketSender sender;
-    std::mutex result_mutex;
+    std::mutex result_mutex;  // Mutex for thread-safety
 
     // Store results to sort later
     std::map<int, string> port_states;
@@ -472,14 +523,14 @@ void Scanner::scanSYNPorts(int start_port, int end_port, bool verbose) {
     Tins::Sniffer sniffer(iface.name(), config);
     auto start_time = std::chrono::steady_clock::now();
 
-    // Start sniffing in a separate thread
+    // Start sniffing on local interface in a separate thread for incoming TCP packets
     std::thread sniff_thread([&]() {
         sniffer.sniff_loop([&](const Tins::PDU& pdu) {
             try {
                 const Tins::IP& ip = pdu.rfind_pdu<Tins::IP>();
                 const Tins::TCP& tcp = pdu.rfind_pdu<Tins::TCP>();
 
-                int port = tcp.sport();  // Fix: use source port from target
+                int port = tcp.sport();  // Use source port from target response
                 std::string state;
 
                 if (tcp.get_flag(Tins::TCP::SYN) && tcp.get_flag(Tins::TCP::ACK)) {
@@ -513,13 +564,13 @@ void Scanner::scanSYNPorts(int start_port, int end_port, bool verbose) {
         });
     });
 
-    // Send SYN packets
-    for (int port = start_port; port <= end_port; ++port) {
+    // Main thread sends SYN packets to different ports on target IP while sniffer thread listens
+    for (int port = start; port <= end; ++port) {
         Tins::TCP tcp = Tins::TCP(port, Tins::TCP::Flags::SYN);
         tcp.set_flag(Tins::TCP::SYN, 1);
-        Tins::IP ip = Tins::IP(target_ip_, src_ip) / tcp;
+        Tins::IP ip = Tins::IP(target_ip_, src_ip) / tcp;  // Stack protocol layers and construct raw IP packet
 
-        // Send at IP layer (no Ethernet MAC issues)
+        // Send at IP layer
         sender.send(ip);
     }
 
@@ -532,7 +583,7 @@ void Scanner::scanSYNPorts(int start_port, int end_port, bool verbose) {
     size_t state_col_width = 5;   // "STATE"
     size_t service_col_width = 7; // "SERVICE"
 
-    for (int port = start_port; port <= end_port; ++port) {
+    for (int port = start; port <= end; ++port) {
         string port_proto = to_string(port) + "/tcp";
         string state, service;
 
@@ -563,16 +614,16 @@ void Scanner::scanSYNPorts(int start_port, int end_port, bool verbose) {
 
     cout << "\n";
 
-    // Print header
+    // Print header row
     std::cout << std::left
             << std::setw(port_col_width + 2) << "PORT"
             << std::setw(state_col_width + 2) << "STATE"
             << std::setw(service_col_width + 2) << "SERVICE"
             << "\n";
 
-    // Print data rows
+    // Print each row, optionally filtering closed ports if verbose == false
     for (const auto& [port_proto, state, service] : parsed_rows) {
-        if (verbose != true && state == "closed") {
+        if (!verbose && state == "closed") {
             continue;
         }
         std::cout << std::left
