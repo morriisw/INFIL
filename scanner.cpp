@@ -162,14 +162,14 @@ UDPScanResult Scanner::isUDPPortOpen(int port) {
         } else if (port == 500) {
             // ISAKMP (IKE Phase 1) header
             payload = {
-                0x00, 0x00, 0x00, 0x00,  // Initiator cookie
-                0x00, 0x00, 0x00, 0x00,  // Responder cookie
-                0x01,                    // Next payload: SA (Security Association)
-                0x10,                    // Version
-                0x02,                    // Exchange type: Identity Protection (IKEv1)
-                0x00,                    // Flags
-                0x00, 0x00, 0x00, 0x00,  // Message ID
-                0x00, 0x00, 0x00, 0x1C   // Length
+                0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,  // Initiator cookie (8 bytes)
+                0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,  // Responder cookie (8 bytes)
+                0x01,                                            // Next payload: SA (Security Association)
+                0x10,                                            // Version (IKEv1)
+                0x02,                                            // Exchange type: Identity Protection (IKEv1)
+                0x00,                                            // No Flags
+                0x00, 0x00, 0x00, 0x00,                          // Message ID
+                0x00, 0x00, 0x00, 0x1C                           // Length (28 bytes)
             };
         } else if (port == 514) {
             // Syslog test message
